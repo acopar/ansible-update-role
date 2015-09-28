@@ -1,0 +1,4 @@
+---
+update_requirements: ["mlocate"]
+
+update_kernel_package_name: "kernel"

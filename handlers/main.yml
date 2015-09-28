@@ -1,0 +1,26 @@
+---
+# NOTE: The 'async: 0' parameter is not honoured on Debian Wheezy systems
+#       and Ansible waits until the task is completed.
+# TODO: File a bug report about this!
+- name: Schedule reboot
+  command: shutdown -r {{ update_reboot_time }}
+  async: 0
+  poll: 0
+  ignore_errors: true
+  notify: Send email about scheduled reboot
+
+- name: Send email about scheduled reboot
+  # NOTE: This task is run locally on the machine, where Ansible is run, so
+  #       it should not run as sudo
+  sudo: False
+  local_action: >
+    mail
+    host="{{ update_email_host | default(omit) }}"
+    port="{{ update_email_host_port | default(omit) }}"
+    username="{{ update_email_host_user | default(omit) }}"
+    password="{{ update_email_host_password | default(omit) }}"
+    from="{{ update_email_sender }}"
+    to="{{ update_email_recipient }}"
+    subject="Scheduled reboot at {{ update_reboot_time }} on host {{ inventory_hostname }}"
+    charset="utf8"
+  when: update_enable_email

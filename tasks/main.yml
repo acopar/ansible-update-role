@@ -1,0 +1,109 @@
+---
+- name: Include distribution-specific variables
+  include_vars: "{{ item }}"
+  with_first_found:
+    - "{{ ansible_distribution }}-{{ ansible_distribution_major_version }}.yml"
+    - "{{ ansible_distribution }}.yml"
+    - "{{ ansible_os_family }}.yml"
+    - default.yml
+
+- name: Sanity check of role's configuration
+  assert:
+    that:
+      - update_reboot_time != "now"
+      - update_reboot_time != "+1"
+
+# NOTE: This task fixes the problem in Ansible 1.9.x where 'ansible_pkg_mgr'
+#       is erroneously set to 'yum' instead of 'dnf'.
+- name: "Set 'ansible_pkg_mgr' to 'dnf' on Fedora 22+"
+  set_fact: ansible_pkg_mgr='dnf'
+  when: ansible_distribution == "Fedora" and ansible_distribution_version | int >= 22
+
+- name: Update apt cache on Debian-based systems
+  apt: update_cache=yes
+  when: ansible_os_family == "Debian"
+
+# START: selinux-policy problem work-around. For more info see:
+#        https://bugzilla.redhat.com/show_bug.cgi?id=1264051
+# TODO: Remove the following tasks after selinux-policy-3.13.1-128.16.fc22 is
+#       moved to the updates repository.
+- name: Enable updates-testing DNF repository
+  command: "dnf config-manager --set-enabled updates-testing"
+  when: ansible_distribution == "Fedora" and ansible_distribution_version | int == 22
+  changed_when: false
+
+- name: Update selinux-policy package
+  dnf: name=selinux-policy state=latest
+  when: ansible_distribution == "Fedora" and ansible_distribution_version | int == 22
+
+- name: Disable updates-testing DNF repository
+  command: "dnf config-manager --set-disabled updates-testing"
+  when: ansible_distribution == "Fedora" and ansible_distribution_version | int == 22
+  changed_when: false
+# END: selinux-policy work-around
+
+# TODO: This is a work-around until Ansible 2.0 is released. The problem
+#       with this approach is that it calls 'ansible_pkg_mgr' for each
+#       package whereas directly calling
+#       'ansible_pkg_mgr: name={{ item }} state=present' would only call it
+#       once.
+#       Ansible 2.0 will provide a new generic OS package manager:
+#       http://docs.ansible.com/ansible/package_module.html
+- name: Install dependencies
+  action: "{{ ansible_pkg_mgr }} name={{ item }} state=present"
+  with_items: "{{ update_requirements }}"
+
+# TODO: This is a work-around until Ansible 2.0 is released. The problem
+#       with this approach is that it calls 'ansible_pkg_mgr' for each
+#       package whereas directly calling
+#       'ansible_pkg_mgr: name={{ item }} state=present' would only call it
+#       once.
+#       Ansible 2.0 will provide a new generic OS package manager:
+#       http://docs.ansible.com/ansible/package_module.html
+- name: Update the kernel
+  action: "{{ ansible_pkg_mgr }} name={{ update_kernel_package_name }} state=latest"
+  notify:
+    - Schedule reboot
+
+# TODO: This is a work-around until Ansible 2.0 is released.
+#       Ansible 2.0 will provide a new generic OS package manager:
+#       http://docs.ansible.com/ansible/package_module.html
+- name: Update everything else
+  action: "{{ ansible_pkg_mgr }} name=* state=latest"
+  when: ansible_os_family == "RedHat"
+
+# TODO: This is a work-around until Ansible 2.0 is released.
+#       Ansible 2.0 will provide a new generic OS package manager:
+#       http://docs.ansible.com/ansible/package_module.html
+- name: Update everything else
+  apt: upgrade=dist
+  when: ansible_os_family == "Debian"
+
+- name: Run updatedb
+  command: updatedb
+  when: ansible_os_family == "RedHat"
+  changed_when: false
+
+- name: Search for .rpmnew files
+  command: locate .rpmnew
+  when: ansible_os_family == "RedHat"
+  register: update_redhat_rpmnew_files
+  failed_when: false
+  changed_when: update_redhat_rpmnew_files.stdout != ""
+
+- name: Send email about discovered .rpmnew files
+  # NOTE: This task is run locally on the machine, where Ansible is run, so
+  #       it should not run as sudo
+  sudo: False
+  local_action: >
+    mail
+    host="{{ update_email_host | default(omit) }}"
+    port="{{ update_email_host_port | default(omit) }}"
+    username="{{ update_email_host_user | default(omit) }}"
+    password="{{ update_email_host_password | default(omit) }}"
+    from="{{ update_email_sender }}"
+    to="{{ update_email_recipient }}"
+    subject="Discovered .rpmnew files on host {{ inventory_hostname }}"
+    body="{{ update_redhat_rpmnew_files.stdout }}"
+    charset="utf8"
+  when: update_enable_email and ansible_os_family == "RedHat" and update_redhat_rpmnew_files.stdout != ""
