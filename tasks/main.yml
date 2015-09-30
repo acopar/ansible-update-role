@@ -11,7 +11,7 @@
   assert:
     that:
       - update_reboot_time != "now"
-      - update_reboot_time != "+1"
+      - update_reboot_time != "+0"
 
 # NOTE: This task fixes the problem in Ansible 1.9.x where 'ansible_pkg_mgr'
 #       is erroneously set to 'yum' instead of 'dnf'.
