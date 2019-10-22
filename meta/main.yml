@@ -1,5 +1,6 @@
 ---
 galaxy_info:
+  role_name: update
   author: Tadej Janež
   description: Role to update and reboot (if necessary) Fedora, Red Hat/CentOS and Debian systems.
   # company: your company (optional)
