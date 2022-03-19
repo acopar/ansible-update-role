@@ -91,19 +91,3 @@
   failed_when: false
   changed_when: update_redhat_rpmnew_files.stdout != ""
 
-- name: Send email about discovered .rpmnew files
-  # NOTE: This task is run locally on the machine, where Ansible is run, so
-  #       it should not run as sudo
-  sudo: False
-  local_action: >
-    mail
-    host="{{ update_email_host | default(omit) }}"
-    port="{{ update_email_host_port | default(omit) }}"
-    username="{{ update_email_host_user | default(omit) }}"
-    password="{{ update_email_host_password | default(omit) }}"
-    from="{{ update_email_sender }}"
-    to="{{ update_email_recipient }}"
-    subject="Discovered .rpmnew files on host {{ inventory_hostname }}"
-    body="{{ update_redhat_rpmnew_files.stdout }}"
-    charset="utf8"
-  when: update_enable_email and ansible_os_family == "RedHat" and update_redhat_rpmnew_files.stdout != ""
