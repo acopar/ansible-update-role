@@ -12,7 +12,7 @@
 - name: Send email about scheduled reboot
   # NOTE: This task is run locally on the machine, where Ansible is run, so
   #       it should not run as sudo
-  sudo: False
+  become: no
   local_action: >
     mail
     host="{{ update_email_host | default(omit) }}"
